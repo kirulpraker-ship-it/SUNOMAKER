@@ -11,15 +11,20 @@ if (!encryptionKey || encryptionKey.length < 32) {
   encryptionKey = 'sunomaker-default-secure-encryption-key-32-bytes-long!';
 }
 
+const isVercel = Boolean(process.env.VERCEL);
+const defaultDataDir = isVercel ? '/tmp/sunomaker-data' : path.resolve(process.cwd(), 'data');
+const defaultDbUrl = isVercel ? 'file:/tmp/sunomaker-data/sunomaker.db' : 'file:./data/sunomaker.db';
+
 export const config = {
-  port: 3000,
+  port: Number(process.env.PORT) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   isDev: (process.env.NODE_ENV || 'development') === 'development',
-  dbUrl: process.env.DATABASE_URL || 'file:./data/sunomaker.db',
+  dbUrl: process.env.DATABASE_URL || defaultDbUrl,
   sessionSecret: process.env.SESSION_SECRET || 'sunomaker-secure-session-secret-key-32chars',
   credentialEncryptionKey: encryptionKey,
   appUrl: process.env.APP_URL || 'http://localhost:3000',
   callbackUrl: process.env.CALLBACK_URL || 'http://localhost:3000/api/kie/callback',
   mockKieApi: process.env.MOCK_KIE_API === 'true',
-  dataDir: path.resolve(process.cwd(), 'data'),
+  dataDir: defaultDataDir,
+  isVercel,
 };

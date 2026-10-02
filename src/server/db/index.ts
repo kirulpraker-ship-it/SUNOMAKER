@@ -5,8 +5,12 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config';
 
 // Ensure data directory exists
-if (!fs.existsSync(config.dataDir)) {
-  fs.mkdirSync(config.dataDir, { recursive: true });
+try {
+  if (!fs.existsSync(config.dataDir)) {
+    fs.mkdirSync(config.dataDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn('[SUNOMAKER DB] Could not create dataDir (expected in serverless/read-only):', err);
 }
 
 export const db: Client = createClient({

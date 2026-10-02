@@ -26,6 +26,18 @@ export const LandingPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const handleDemoSwitch = async (role: 'ADMIN' | 'USER') => {
+    setError(null);
+    setLoading(true);
+    try {
+      await switchDemo(role);
+    } catch (err: any) {
+      setError(err.message || 'Failed to enter demo studio');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -61,14 +73,18 @@ export const LandingPage: React.FC = () => {
 
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => switchDemo('USER')}
-              className="text-xs px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition"
+              type="button"
+              disabled={loading}
+              onClick={() => handleDemoSwitch('USER')}
+              className="text-xs px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition cursor-pointer disabled:opacity-50"
             >
               Demo Preview (Producer)
             </button>
             <button
-              onClick={() => switchDemo('ADMIN')}
-              className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 font-semibold transition"
+              type="button"
+              disabled={loading}
+              onClick={() => handleDemoSwitch('ADMIN')}
+              className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 font-semibold transition cursor-pointer disabled:opacity-50"
             >
               Admin Demo
             </button>
@@ -218,15 +234,19 @@ export const LandingPage: React.FC = () => {
                 <p className="text-[11px] text-center text-zinc-400 mb-3">Or explore immediately with pre-configured accounts:</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => switchDemo('USER')}
-                    className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800/80 border border-zinc-800 text-xs font-semibold text-zinc-300 flex items-center justify-center gap-1.5 transition"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleDemoSwitch('USER')}
+                    className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-850 hover:border-zinc-700 border border-zinc-800 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 disabled:opacity-50"
                   >
                     <Music2 className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Alex Producer</span>
                   </button>
                   <button
-                    onClick={() => switchDemo('ADMIN')}
-                    className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800/80 border border-zinc-800 text-xs font-semibold text-zinc-300 flex items-center justify-center gap-1.5 transition"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleDemoSwitch('ADMIN')}
+                    className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-850 hover:border-zinc-700 border border-zinc-800 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 disabled:opacity-50"
                   >
                     <Shield className="w-3.5 h-3.5 text-purple-400" />
                     <span>Studio Admin</span>
