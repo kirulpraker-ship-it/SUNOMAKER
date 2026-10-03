@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
 import { db } from '../db';
 import { AuditService } from '../services/auditService';
+import { AdminKeyPoolService } from '../services/adminKeyPoolService';
 
 export const adminRouter = Router();
 
@@ -205,3 +206,120 @@ adminRouter.get('/audit-logs', async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to fetch audit logs' });
   }
 });
+
+// ==========================================
+// ADMIN MULTI-KEY POOL & CREDIT AGGREGATOR
+// ==========================================
+
+/**
+ * GET /api/admin/key-pool
+ * Returns all keys in the Admin Pool with aggregated credits and statistics
+ */
+adminRouter.get('/key-pool', async (req: Request, res: Response) => {
+  try {
+    const summary = await AdminKeyPoolService.getPoolSummary();
+    return res.json(summary);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch key pool' });
+  }
+});
+
+/**
+ * POST /api/admin/key-pool
+ * Adds a single API key to the pool
+ */
+adminRouter.post('/key-pool', async (req: Request, res: Response) => {
+  try {
+    const { label, apiKey, priority } = req.body;
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API key is required' });
+    }
+
+    const item = await AdminKeyPoolService.addKey(label || '', apiKey, priority ? Number(priority) : 1);
+    await AuditService.log(req.user!.id, 'ADMIN_KEY_POOL_ADDED', { label: item.label, keySuffix: item.keyLastFour }, req.ip);
+
+    return res.status(201).json(item);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Failed to add key to pool' });
+  }
+});
+
+/**
+ * POST /api/admin/key-pool/bulk
+ * Bulk imports multiple API keys (one per line or Label: Key format)
+ */
+adminRouter.post('/key-pool/bulk', async (req: Request, res: Response) => {
+  try {
+    const { bulkText } = req.body;
+    if (!bulkText || typeof bulkText !== 'string') {
+      return res.status(400).json({ error: 'Bulk text content required' });
+    }
+
+    const result = await AdminKeyPoolService.addBulkKeys(bulkText);
+    await AuditService.log(req.user!.id, 'ADMIN_KEY_POOL_BULK_IMPORT', { count: result.added }, req.ip);
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Bulk import failed' });
+  }
+});
+
+/**
+ * POST /api/admin/key-pool/:id/test
+ * Tests connection & refreshes balance for a specific key
+ */
+adminRouter.post('/key-pool/:id/test', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updated = await AdminKeyPoolService.testKey(id);
+    return res.json(updated);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Test failed' });
+  }
+});
+
+/**
+ * POST /api/admin/key-pool/sync-all
+ * Tests all keys and recomputes total credit pool
+ */
+adminRouter.post('/key-pool/sync-all', async (req: Request, res: Response) => {
+  try {
+    const summary = await AdminKeyPoolService.syncAllBalances();
+    return res.json(summary);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Sync all failed' });
+  }
+});
+
+/**
+ * PATCH /api/admin/key-pool/:id
+ * Updates key status (ACTIVE/DISABLED), label, or priority
+ */
+adminRouter.patch('/key-pool/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { label, status, priority } = req.body;
+
+    await AdminKeyPoolService.updateKey(id, { label, status, priority });
+    return res.json({ success: true, message: 'Key updated' });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Failed to update key' });
+  }
+});
+
+/**
+ * DELETE /api/admin/key-pool/:id
+ * Removes a key from the pool
+ */
+adminRouter.delete('/key-pool/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await AdminKeyPoolService.deleteKey(id);
+    await AuditService.log(req.user!.id, 'ADMIN_KEY_POOL_DELETED', { keyId: id }, req.ip);
+
+    return res.json({ success: true, message: 'Key removed from pool' });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Failed to delete key' });
+  }
+});
+

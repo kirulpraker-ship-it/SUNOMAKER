@@ -104,3 +104,27 @@ export interface AuditLogItem {
   ipAddress?: string;
   createdAt: string;
 }
+
+export interface AdminPoolKeyItem {
+  id: string;
+  label: string;
+  keyLastFour: string;
+  maskedKey: string;
+  status: 'ACTIVE' | 'EXHAUSTED' | 'INVALID' | 'DISABLED';
+  balance: number;
+  totalGenerations: number;
+  priority: number;
+  lastTestedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPoolSummary {
+  keys: AdminPoolKeyItem[];
+  totalKeys: number;
+  activeKeys: number;
+  totalCreditsAccumulated: number;
+  totalGenerations: number;
+}
+

@@ -134,6 +134,23 @@ export async function initDb() {
     );
   `);
 
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS admin_key_pool (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      encryptedApiKey TEXT NOT NULL,
+      keyLastFour TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      balance REAL DEFAULT 0,
+      totalGenerations INTEGER DEFAULT 0,
+      lastTestedAt TEXT,
+      lastError TEXT,
+      priority INTEGER DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+
   // Seed default Admin & Demo accounts if database is fresh
   const existingUsers = await db.execute('SELECT COUNT(*) as count FROM users');
   const userCount = Number(existingUsers.rows[0]?.count || 0);

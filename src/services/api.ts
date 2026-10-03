@@ -1,4 +1,4 @@
-import { User, KieConnectionState, Track, Generation, LyricsDraft, AdminStats, AdminUser, AuditLogItem } from '../types';
+import { User, KieConnectionState, Track, Generation, LyricsDraft, AdminStats, AdminUser, AuditLogItem, AdminPoolSummary, AdminPoolKeyItem } from '../types';
 
 const TOKEN_STORAGE_KEY = 'sunomaker_session_token';
 
@@ -188,6 +188,10 @@ export const api = {
     return fetchJson(`/api/music/${id}`, { method: 'DELETE' });
   },
 
+  async deleteGeneration(id: string): Promise<{ success: boolean }> {
+    return fetchJson(`/api/music/generations/${id}`, { method: 'DELETE' });
+  },
+
   async toggleFavorite(id: string): Promise<{ success: boolean; isFavorite: boolean }> {
     return fetchJson(`/api/music/${id}/favorite`, { method: 'POST' });
   },
@@ -264,5 +268,49 @@ export const api = {
 
   async getAdminAuditLogs(): Promise<AuditLogItem[]> {
     return fetchJson('/api/admin/audit-logs');
+  },
+
+  // Admin Key Pool & Credit Aggregator
+  async getAdminKeyPool(): Promise<AdminPoolSummary> {
+    return fetchJson('/api/admin/key-pool');
+  },
+
+  async addAdminPoolKey(payload: { label?: string; apiKey: string; priority?: number }): Promise<AdminPoolKeyItem> {
+    return fetchJson('/api/admin/key-pool', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async addAdminPoolBulkKeys(bulkText: string): Promise<{ added: number; errors: string[] }> {
+    return fetchJson('/api/admin/key-pool/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ bulkText }),
+    });
+  },
+
+  async testAdminPoolKey(id: string): Promise<AdminPoolKeyItem> {
+    return fetchJson(`/api/admin/key-pool/${id}/test`, {
+      method: 'POST',
+    });
+  },
+
+  async syncAllAdminPoolKeys(): Promise<AdminPoolSummary> {
+    return fetchJson('/api/admin/key-pool/sync-all', {
+      method: 'POST',
+    });
+  },
+
+  async updateAdminPoolKey(id: string, payload: { label?: string; status?: string; priority?: number }): Promise<{ success: boolean }> {
+    return fetchJson(`/api/admin/key-pool/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteAdminPoolKey(id: string): Promise<{ success: boolean }> {
+    return fetchJson(`/api/admin/key-pool/${id}`, {
+      method: 'DELETE',
+    });
   },
 };

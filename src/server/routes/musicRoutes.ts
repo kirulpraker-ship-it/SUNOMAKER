@@ -6,6 +6,7 @@ import { CredentialService } from '../security/credentialService';
 import { kieAiProvider } from '../providers/kieAiProvider';
 import { AuditService } from '../services/auditService';
 import { generateRateLimiter, pollingRateLimiter } from '../security/rateLimiter';
+import { AdminKeyPoolService } from '../services/adminKeyPoolService';
 
 export const musicRouter = Router();
 
@@ -26,21 +27,31 @@ musicRouter.post('/generate', generateRateLimiter, async (req: Request, res: Res
       return res.status(401).json({ error: 'Authentication required. Please log in.' });
     }
 
-    // 1. Verify user's Kie.ai credential exists and is active
+    // 1. Resolve active key: User's direct BYOK credential, or Admin Key Pool for Admin accounts
+    let decryptedKey: string | null = null;
+    let poolKeyId: string | null = null;
+
     const cred = await CredentialService.getCredential(userId);
-    if (!cred || cred.status !== 'CONNECTED') {
-      return res.status(400).json({
-        error: 'KIE_API_NOT_CONNECTED',
-        message: 'Connect your Kie.ai API key before generating music.',
-      });
+    if (cred && cred.status === 'CONNECTED') {
+      decryptedKey = await CredentialService.getDecryptedKey(userId);
     }
 
-    // 2. Decrypt API key strictly inside backend memory
-    const decryptedKey = await CredentialService.getDecryptedKey(userId);
+    if (!decryptedKey) {
+      const userRes = await db.execute({ sql: 'SELECT role FROM users WHERE id = ?', args: [userId] });
+      const userRole = userRes.rows[0]?.role || 'USER';
+      if (userRole === 'ADMIN') {
+        const poolKey = await AdminKeyPoolService.getNextActiveDecryptedKey();
+        if (poolKey) {
+          decryptedKey = poolKey.apiKey;
+          poolKeyId = poolKey.id;
+        }
+      }
+    }
+
     if (!decryptedKey) {
       return res.status(400).json({
-        error: 'KIE_KEY_DECRYPT_FAILED',
-        message: 'Could not access your Kie.ai key. Please reconnect your key in Settings.',
+        error: 'KIE_API_NOT_CONNECTED',
+        message: 'Connect your Kie.ai API key (or configure Admin Key Pool) before generating music.',
       });
     }
 
@@ -82,6 +93,10 @@ musicRouter.post('/generate', generateRateLimiter, async (req: Request, res: Res
       audioWeight,
       personaId,
     });
+
+    if (poolKeyId) {
+      await AdminKeyPoolService.recordUsage(poolKeyId).catch(() => {});
+    }
 
     const generationId = 'gen_' + crypto.randomUUID().substring(0, 12);
     const now = new Date().toISOString();
@@ -175,6 +190,59 @@ musicRouter.get('/', requireAuth, async (req: Request, res: Response) => {
       sql += ' ORDER BY t.duration DESC';
     } else {
       sql += ' ORDER BY t.createdAt DESC';
+    }
+
+    // Auto-sync pending generations if user has Kie key connected
+    const decryptedKey = await CredentialService.getDecryptedKey(userId).catch(() => null);
+    if (decryptedKey) {
+      const pendingToCheck = await db.execute({
+        sql: `SELECT * FROM generations WHERE userId = ? AND status IN ('QUEUED', 'PROCESSING') ORDER BY createdAt DESC LIMIT 5`,
+        args: [userId],
+      });
+
+      for (const gen of pendingToCheck.rows) {
+        try {
+          const taskRes = await kieAiProvider.getTaskStatus(decryptedKey, String(gen.taskId));
+          const now = new Date().toISOString();
+
+          if (taskRes.status === 'COMPLETED' && taskRes.tracks && taskRes.tracks.length > 0) {
+            for (const trk of taskRes.tracks) {
+              const trackId = 'trk_' + crypto.randomUUID().substring(0, 12);
+              await db.execute({
+                sql: `INSERT INTO tracks (
+                        id, generationId, userId, title, audioUrl, imageUrl, duration, prompt, style, lyrics, model, createdAt
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                  trackId,
+                  String(gen.id),
+                  userId,
+                  trk.title,
+                  trk.audioUrl,
+                  trk.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+                  trk.duration || 120,
+                  trk.prompt || (gen.prompt as string),
+                  trk.style || (gen.style as string),
+                  trk.lyrics || (gen.lyrics as string),
+                  gen.model as string,
+                  now,
+                ],
+              });
+            }
+
+            await db.execute({
+              sql: `UPDATE generations SET status = 'COMPLETED', audioUrl = ?, imageUrl = ?, completedAt = ?, updatedAt = ? WHERE id = ?`,
+              args: [taskRes.tracks[0].audioUrl || '', taskRes.tracks[0].imageUrl || '', now, now, String(gen.id)],
+            });
+          } else if (taskRes.status === 'FAILED') {
+            await db.execute({
+              sql: `UPDATE generations SET status = 'FAILED', errorMessage = ?, updatedAt = ? WHERE id = ?`,
+              args: [taskRes.errorMessage || 'Generation failed on provider', now, String(gen.id)],
+            });
+          }
+        } catch (syncErr) {
+          // silently continue
+        }
+      }
     }
 
     const tracksRes = await db.execute({ sql, args: params });
@@ -537,3 +605,24 @@ musicRouter.post('/video', requireAuth, async (req: Request, res: Response) => {
     return res.status(500).json({ error: err.message || 'Music video creation failed' });
   }
 });
+
+/**
+ * DELETE /api/music/generations/:id
+ * Cancels/removes a pending or stalled generation task
+ */
+musicRouter.delete('/generations/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { id } = req.params;
+
+    await db.execute({
+      sql: 'DELETE FROM generations WHERE id = ? AND userId = ?',
+      args: [id, userId],
+    });
+
+    return res.json({ success: true, message: 'Generation task removed' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to remove generation task' });
+  }
+});
+

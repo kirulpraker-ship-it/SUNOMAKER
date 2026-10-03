@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   Filter,
@@ -14,6 +14,8 @@ import {
   Clock,
   Sparkles,
   Info,
+  RefreshCw,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Track, Generation } from '../types';
@@ -35,6 +37,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   const [tracks, setTracks] = useState<Track[]>([]);
   const [pendingGens, setPendingGens] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Filters & Search
   const [statusFilter, setStatusFilter] = useState('all');
@@ -43,12 +46,12 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
-    loadLibrary();
+    loadLibrary(true);
   }, [statusFilter, searchTerm, sortBy, filterFavoriteOnly]);
 
-  const loadLibrary = async () => {
+  const loadLibrary = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const res = await api.getLibrary({
         status: statusFilter,
         favorite: filterFavoriteOnly,
@@ -60,8 +63,66 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     } catch (err) {
       console.error('Failed to load library:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
+  };
+
+  // Auto-poll active generations
+  useEffect(() => {
+    if (pendingGens.length === 0) return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      let anyFinished = false;
+      for (const gen of pendingGens) {
+        try {
+          const res = await api.getTaskStatus(gen.taskId);
+          if (res.status === 'COMPLETED' || res.status === 'FAILED') {
+            anyFinished = true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (anyFinished && isMounted) {
+        loadLibrary(false);
+      }
+    }, 4000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [pendingGens]);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      for (const gen of pendingGens) {
+        await api.getTaskStatus(gen.taskId).catch(() => {});
+      }
+      await loadLibrary(false);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleCancelGeneration = async (genId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.deleteGeneration(genId);
+      setPendingGens((prev) => prev.filter((g) => g.id !== genId));
+    } catch (err) {
+      console.error('Failed to remove generation:', err);
+    }
+  };
+
+  const handleClearAllPending = async () => {
+    if (!confirm('Dismiss all active generation indicators? (Completed tracks will remain in library)')) return;
+    for (const gen of pendingGens) {
+      await api.deleteGeneration(gen.id).catch(() => {});
+    }
+    setPendingGens([]);
   };
 
   const handleDelete = async (trackId: string, e: React.MouseEvent) => {
@@ -127,24 +188,58 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
 
       {/* Pending Generations Section if any are active */}
       {pendingGens.length > 0 && !filterFavoriteOnly && (
-        <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30 space-y-2">
-          <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-2">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>Active Generations on Kie.ai ({pendingGens.length})</span>
-          </h4>
+        <div className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-500/40 space-y-3 shadow-lg shadow-indigo-950/40">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              <span>Active Generations on Kie.ai ({pendingGens.length})</span>
+              <span className="text-[10px] font-normal text-indigo-300/70 ml-1">• Auto-checking every 4s</span>
+            </h4>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="px-2.5 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-[11px] font-semibold text-indigo-200 flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Syncing...' : 'Sync Status'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllPending}
+                className="px-2 py-1 rounded-lg bg-zinc-900/80 hover:bg-red-950/50 border border-zinc-800 hover:border-red-800/50 text-[11px] text-zinc-400 hover:text-red-300 transition cursor-pointer"
+                title="Clear stalled queue items"
+              >
+                Dismiss All
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {pendingGens.map((gen) => (
               <div
                 key={gen.id}
-                className="p-3 rounded-lg bg-zinc-900/80 border border-indigo-500/20 flex items-center justify-between text-xs"
+                className="p-3 rounded-lg bg-zinc-900/90 border border-indigo-500/30 flex items-center justify-between text-xs gap-3"
               >
-                <div>
-                  <p className="font-semibold text-white truncate">{gen.title}</p>
-                  <p className="text-[10px] text-zinc-400 font-mono">Task: {gen.taskId}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white truncate">{gen.title || 'Untitled Track'}</p>
+                  <p className="text-[10px] text-zinc-400 font-mono truncate">Task: {gen.taskId}</p>
                 </div>
-                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase">
-                  {gen.status}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold uppercase flex items-center gap-1">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    {gen.status}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleCancelGeneration(gen.id, e)}
+                    className="p-1 rounded-md hover:bg-zinc-800 text-zinc-500 hover:text-red-400 transition cursor-pointer"
+                    title="Dismiss this pending task"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

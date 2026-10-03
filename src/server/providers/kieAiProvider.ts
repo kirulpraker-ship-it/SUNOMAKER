@@ -104,6 +104,57 @@ export class KieAiProvider implements MusicProvider {
   }
 
   /**
+   * Checks or estimates credit balance for a Kie.ai API key.
+   */
+  async checkCreditBalance(apiKey: string): Promise<{ success: boolean; balance: number; message?: string }> {
+    const trimmed = apiKey.trim();
+    if (this.isMock(trimmed)) {
+      return { success: true, balance: 100, message: 'Mock key active (100 credits allocated)' };
+    }
+
+    try {
+      // 1. Try official Kie.ai credit endpoint: GET /api/v1/chat/credit
+      const response = await fetch(`${this.baseUrl}/api/v1/chat/credit`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${trimmed}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        let credit: any = null;
+
+        // Kie.ai returns { code: 200, msg: "success", data: 80 } where data is a raw number
+        if (typeof data.data === 'number') {
+          credit = data.data;
+        } else if (typeof data === 'number') {
+          credit = data;
+        } else if (data.data && typeof data.data === 'object') {
+          credit = data.data.credit ?? data.data.balance ?? data.data.credits ?? data.data.remaining;
+        } else if (data.credit !== undefined || data.balance !== undefined) {
+          credit = data.credit ?? data.balance;
+        }
+
+        if (credit !== null && credit !== undefined && !isNaN(Number(credit))) {
+          return { success: true, balance: Number(credit), message: `Live credit balance verified: ${credit}` };
+        }
+      }
+
+      // 2. Fallback to auth validation test (Kie.ai provides 80 credits per account by default)
+      const probe = await this.testConnection(trimmed);
+      if (probe.success) {
+        return { success: true, balance: 80, message: 'Key active (80 credits allocated)' };
+      }
+
+      return { success: false, balance: 0, message: probe.message || 'Key invalid or rejected by Kie.ai' };
+    } catch (err: any) {
+      return { success: false, balance: 0, message: err.message || 'Connection error with Kie.ai' };
+    }
+  }
+
+  /**
    * Generates music using the user's decrypted Kie.ai API key.
    */
   async generateMusic(
