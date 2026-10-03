@@ -56,7 +56,7 @@ kieRouter.post('/connect', connectRateLimiter, async (req: Request, res: Respons
   try {
     let user = req.user;
     if (!user) {
-      const defUserRes = await db.execute("SELECT id, name, email, role, status FROM users WHERE email = 'producer@sunomaker.studio'");
+      const defUserRes = await db.execute("SELECT id, name, email, role, status, credits FROM users WHERE email = 'producer@sunomaker.studio'");
       if (defUserRes.rows.length > 0) {
         const row = defUserRes.rows[0];
         user = {
@@ -65,6 +65,7 @@ kieRouter.post('/connect', connectRateLimiter, async (req: Request, res: Respons
           email: String(row.email),
           role: String(row.role) as any,
           status: String(row.status) as any,
+          credits: Number(row.credits ?? 20),
         };
         req.user = user;
       }

@@ -43,6 +43,15 @@ export const AdminPage: React.FC = () => {
   const [isSyncingPool, setIsSyncingPool] = useState(false);
   const [testingKeyId, setTestingKeyId] = useState<string | null>(null);
 
+  // User Credit Distributor States
+  const [creditModalUser, setCreditModalUser] = useState<AdminUser | null>(null);
+  const [creditAmount, setCreditAmount] = useState<number>(20);
+  const [creditAction, setCreditAction] = useState<'add' | 'set' | 'deduct'>('add');
+  const [creditReason, setCreditReason] = useState<string>('Admin Studio Bonus');
+  const [showDistributeModal, setShowDistributeModal] = useState(false);
+  const [distributeAmount, setDistributeAmount] = useState<number>(20);
+  const [distributeReason, setDistributeReason] = useState<string>('Studio Promotion / Welcome Quota');
+
   // Form states
   const [singleLabel, setSingleLabel] = useState('');
   const [singleKey, setSingleKey] = useState('');
@@ -208,6 +217,59 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleQuickAddCredits = async (user: AdminUser, amount: number) => {
+    try {
+      const res = await api.updateUserCredits(user.id, { amount, action: 'add', reason: `Quick +${amount} credits` });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, credits: res.credits } : u))
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed to add credits');
+    }
+  };
+
+  const handleUpdateCreditsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!creditModalUser) return;
+    setModalSubmitting(true);
+    setFormError(null);
+    try {
+      const res = await api.updateUserCredits(creditModalUser.id, {
+        amount: Number(creditAmount),
+        action: creditAction,
+        reason: creditReason,
+      });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === creditModalUser.id ? { ...u, credits: res.credits } : u))
+      );
+      setCreditModalUser(null);
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to update credits');
+    } finally {
+      setModalSubmitting(false);
+    }
+  };
+
+  const handleBulkDistributeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setModalSubmitting(true);
+    setFormError(null);
+    try {
+      await api.distributeCredits({
+        amount: Number(distributeAmount),
+        reason: distributeReason,
+      });
+      setShowDistributeModal(false);
+      // Reload users data
+      const updatedUsers = await api.getAdminUsers();
+      setUsers(updatedUsers);
+    } catch (err: any) {
+      setFormError(err.message || 'Bulk distribution failed');
+    } finally {
+      setModalSubmitting(false);
+    }
+  };
+
   const handleToggleUserStatus = async (user: AdminUser) => {
     const nextStatus = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
     if (!confirm(`Are you sure you want to ${nextStatus.toLowerCase()} user ${user.name}?`)) return;
@@ -219,6 +281,28 @@ export const AdminPage: React.FC = () => {
       );
     } catch {
       alert('Failed to update user status');
+    }
+  };
+
+  const handleDeleteUser = async (user: AdminUser) => {
+    if (user.role === 'ADMIN') {
+      alert('Akun Administrator utama tidak dapat dihapus.');
+      return;
+    }
+
+    const confirmed = confirm(
+      `Apakah Anda yakin ingin MENGHAPUS PERMANEN user "${user.name}" (${user.email})?\n\nSemua riwayat generasi musik, trek lagu, dan data user ini akan ikut terhapus.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.deleteAdminUser(user.id);
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      if (stats) {
+        setStats({ ...stats, totalUsers: Math.max(0, stats.totalUsers - 1) });
+      }
+    } catch (err: any) {
+      alert(err.message || 'Gagal menghapus user');
     }
   };
 
@@ -572,7 +656,7 @@ export const AdminPage: React.FC = () => {
           {/* ==================================================== */}
           {activeTab === 'users' && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="relative w-72">
                   <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
@@ -583,6 +667,15 @@ export const AdminPage: React.FC = () => {
                     className="w-full pl-9 pr-3.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
                   />
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDistributeModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition cursor-pointer"
+                >
+                  <Coins className="w-3.5 h-3.5 text-amber-200" />
+                  <span>Distribute Credits to All Users</span>
+                </button>
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900/60 shadow-xl">
@@ -592,10 +685,9 @@ export const AdminPage: React.FC = () => {
                       <th className="p-3.5">User</th>
                       <th className="p-3.5">Role</th>
                       <th className="p-3.5">Account Status</th>
-                      <th className="p-3.5">Kie.ai BYOK</th>
-                      <th className="p-3.5">Masked Key</th>
+                      <th className="p-3.5">User Credits</th>
                       <th className="p-3.5">Generations</th>
-                      <th className="p-3.5 text-right">Actions</th>
+                      <th className="p-3.5 text-right">Quick Top Up / Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/60">
@@ -628,19 +720,44 @@ export const AdminPage: React.FC = () => {
                           </span>
                         </td>
                         <td className="p-3.5">
-                          {u.kieConnection.connected ? (
-                            <span className="text-emerald-400 flex items-center gap-1 font-semibold text-[11px]">
-                              <CheckCircle2 className="w-3 h-3" /> Connected
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-extrabold flex items-center gap-1">
+                              <Coins className="w-3.5 h-3.5 text-amber-400" />
+                              {u.credits ?? 20} Credits
                             </span>
-                          ) : (
-                            <span className="text-zinc-500 text-[11px]">Not Connected</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 font-mono text-[11px] text-zinc-400">
-                          {u.kieConnection.maskedKey || '—'}
+                          </div>
                         </td>
                         <td className="p-3.5 font-bold text-white">{u.generationCount}</td>
-                        <td className="p-3.5 text-right">
+                        <td className="p-3.5 text-right space-x-1.5">
+                          {/* Quick Top Up Buttons */}
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAddCredits(u, 10)}
+                            className="px-2 py-1 rounded-lg bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold transition cursor-pointer"
+                            title="Add +10 Credits instantly"
+                          >
+                            +10
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAddCredits(u, 50)}
+                            className="px-2 py-1 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer"
+                            title="Add +50 Credits instantly"
+                          >
+                            +50
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCreditModalUser(u);
+                              setCreditAmount(20);
+                              setCreditAction('add');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition cursor-pointer"
+                            title="Open detailed credit editor"
+                          >
+                            Edit
+                          </button>
                           <button
                             onClick={() => handleToggleUserStatus(u)}
                             className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
@@ -651,6 +768,16 @@ export const AdminPage: React.FC = () => {
                           >
                             {u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
                           </button>
+                          {u.role !== 'ADMIN' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(u)}
+                              className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-200 border border-red-500/30 transition cursor-pointer"
+                              title={`Hapus permanen akun ${u.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -909,6 +1036,213 @@ export const AdminPage: React.FC = () => {
                 >
                   {modalSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
                   <span>{modalSubmitting ? 'Importing...' : 'Import All Keys'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL: EDIT SINGLE USER CREDITS */}
+      {/* ==================================================== */}
+      {creditModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span>Manage Credits: {creditModalUser.name}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCreditModalUser(null)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateCreditsSubmit} className="space-y-4">
+              {formError && (
+                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-xs text-red-300">
+                  {formError}
+                </div>
+              )}
+
+              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between">
+                <span className="text-xs text-zinc-400">Current Balance</span>
+                <span className="text-sm font-extrabold text-amber-400 flex items-center gap-1">
+                  <Coins className="w-3.5 h-3.5" />
+                  {creditModalUser.credits ?? 20} Credits
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Action Mode
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCreditAction('add')}
+                    className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      creditAction === 'add'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-zinc-950 text-zinc-400 border border-zinc-800 hover:text-white'
+                    }`}
+                  >
+                    + Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreditAction('set')}
+                    className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      creditAction === 'set'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-zinc-950 text-zinc-400 border border-zinc-800 hover:text-white'
+                    }`}
+                  >
+                    = Set Exact
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreditAction('deduct')}
+                    className={`py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      creditAction === 'deduct'
+                        ? 'bg-rose-600 text-white shadow-md'
+                        : 'bg-zinc-950 text-zinc-400 border border-zinc-800 hover:text-white'
+                    }`}
+                  >
+                    - Deduct
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Amount (Credits)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10000"
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(Number(e.target.value))}
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-sm font-bold text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Note / Reason
+                </label>
+                <input
+                  type="text"
+                  value={creditReason}
+                  onChange={(e) => setCreditReason(e.target.value)}
+                  placeholder="e.g. Monthly allocation / Promo top-up"
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreditModalUser(null)}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 text-xs font-semibold text-zinc-300 hover:bg-zinc-700 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSubmitting}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {modalSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Coins className="w-3.5 h-3.5" />}
+                  <span>{modalSubmitting ? 'Saving...' : 'Apply Credits'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL: BULK DISTRIBUTE CREDITS TO ALL USERS */}
+      {/* ==================================================== */}
+      {showDistributeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span>Distribute Credits to All Users</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDistributeModal(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkDistributeSubmit} className="space-y-4">
+              {formError && (
+                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-xs text-red-300">
+                  {formError}
+                </div>
+              )}
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Tindakan ini akan menambahkan kredit secara serentak ke seluruh akun pengguna studio yang berstatus aktif.
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Credit Bonus Amount per User
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="5000"
+                  value={distributeAmount}
+                  onChange={(e) => setDistributeAmount(Number(e.target.value))}
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-sm font-bold text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Reason / Event Tag
+                </label>
+                <input
+                  type="text"
+                  value={distributeReason}
+                  onChange={(e) => setDistributeReason(e.target.value)}
+                  placeholder="e.g. Studio Grand Opening Bonus"
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDistributeModal(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 text-xs font-semibold text-zinc-300 hover:bg-zinc-700 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSubmitting}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-xs font-bold text-white transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {modalSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Coins className="w-3.5 h-3.5" />}
+                  <span>{modalSubmitting ? 'Distributing...' : `Send +${distributeAmount} Credits to All`}</span>
                 </button>
               </div>
             </form>

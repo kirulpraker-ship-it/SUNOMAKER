@@ -77,6 +77,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
         email: cleanEmail,
         role: 'USER',
         status: 'ACTIVE',
+        credits: 20,
       },
       kieConnection: {
         connected: false,
@@ -102,7 +103,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     const cleanEmail = email.toLowerCase().trim();
     const userRes = await db.execute({
-      sql: 'SELECT id, name, email, passwordHash, role, status FROM users WHERE email = ?',
+      sql: 'SELECT id, name, email, passwordHash, role, status, credits FROM users WHERE email = ?',
       args: [cleanEmail],
     });
 
@@ -145,6 +146,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
         email: String(user.email),
         role: String(user.role),
         status: String(user.status),
+        credits: Number(user.credits ?? 20),
       },
       kieConnection: {
         connected: !!cred && cred.status === 'CONNECTED',
@@ -184,7 +186,7 @@ authRouter.get('/me', async (req: Request, res: Response) => {
   let token = req.sessionToken;
 
   if (!user) {
-    const defUserRes = await db.execute("SELECT id, name, email, role, status FROM users WHERE email = 'producer@sunomaker.studio'");
+    const defUserRes = await db.execute("SELECT id, name, email, role, status, credits FROM users WHERE email = 'producer@sunomaker.studio'");
     if (defUserRes.rows.length > 0) {
       const u = defUserRes.rows[0];
       user = {
@@ -193,6 +195,7 @@ authRouter.get('/me', async (req: Request, res: Response) => {
         email: String(u.email),
         role: String(u.role) as 'ADMIN' | 'USER',
         status: String(u.status) as 'ACTIVE' | 'SUSPENDED',
+        credits: Number(u.credits ?? 20),
       };
 
       token = crypto.randomBytes(32).toString('hex');

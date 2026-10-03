@@ -38,8 +38,11 @@ export const CreateMusicPage: React.FC<CreateMusicPageProps> = ({
   initialLyrics = '',
   initialPrompt = '',
 }) => {
-  const { kieConnection } = useAuth();
+  const { user, refreshUser, kieConnection } = useAuth();
   const { playTrack, currentTrack, isPlaying, togglePlay, toggleFavorite, downloadTrack } = useAudioPlayer();
+
+  const userCredits = user?.credits ?? 20;
+  const isAdmin = user?.role === 'ADMIN';
 
   const [mode, setMode] = useState<'quick' | 'custom'>('quick');
 
@@ -85,16 +88,18 @@ export const CreateMusicPage: React.FC<CreateMusicPageProps> = ({
   }, []);
 
   const handleStartGeneration = async () => {
-    // 1. Verify Kie.ai key connection
-    if (!kieConnection.connected) {
-      openConnectModal();
+    // 1. Check user credit balance
+    if (userCredits < 10 && !isAdmin) {
+      setGenerationError(
+        `Kredit studio Anda tidak mencukupi (Sisa: ${userCredits} kredit, Butuh: 10 kredit). Silakan hubungi Administrator untuk penambahan kredit studio.`
+      );
       return;
     }
 
     setGenerationError(null);
     setGeneratedTracks([]);
     setIsGenerating(true);
-    setGenerationStage('Preparing request & validating parameters...');
+    setGenerationStage('Preparing request & allocating studio credits...');
 
     try {
       const payload: any = {
@@ -123,8 +128,11 @@ export const CreateMusicPage: React.FC<CreateMusicPageProps> = ({
         if (personaId.trim()) payload.personaId = personaId.trim();
       }
 
-      setGenerationStage('Submitting task to Kie.ai using your personal API key...');
+      setGenerationStage('Dispatching to Kie.ai Suno cluster via Studio Key Pool...');
       const res = await api.generateMusic(payload);
+
+      // Refresh credits balance in header
+      refreshUser();
 
       setActiveTaskId(res.taskId);
       setGenerationStage('Music generation in progress on Kie.ai Suno cluster...');
@@ -133,7 +141,7 @@ export const CreateMusicPage: React.FC<CreateMusicPageProps> = ({
       pollTaskStatus(res.taskId);
     } catch (err: any) {
       setIsGenerating(false);
-      setGenerationError(err.message || 'Music generation failed. Please check your Kie.ai account status.');
+      setGenerationError(err.message || 'Music generation failed. Please check your studio status.');
     }
   };
 
@@ -515,7 +523,10 @@ export const CreateMusicPage: React.FC<CreateMusicPageProps> = ({
             ) : (
               <>
                 <Sparkles className="w-5 h-5" />
-                <span>Generate Music with Kie.ai ({model.toUpperCase()})</span>
+                <span>Generate Track with Suno V4</span>
+                <span className="ml-1 px-2 py-0.5 rounded-lg bg-black/30 border border-white/20 text-amber-300 text-xs font-bold">
+                  10 Credits
+                </span>
               </>
             )}
           </button>
@@ -557,15 +568,15 @@ export const CreateMusicPage: React.FC<CreateMusicPageProps> = ({
           <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800/90 shadow-xl space-y-4">
             <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center justify-between">
               <span>Studio Monitor</span>
-              <span className="text-[10px] text-emerald-400 font-mono">
-                {kieConnection.connected ? 'BYOK READY' : 'NO KEY'}
+              <span className="text-[11px] text-amber-300 font-extrabold flex items-center gap-1">
+                🪙 {userCredits} Credits
               </span>
             </h4>
 
             {isGenerating ? (
               <div className="p-6 rounded-xl bg-zinc-950 border border-indigo-500/30 text-center space-y-3 animate-pulse">
                 <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
-                <h5 className="text-xs font-bold text-white">Synthesizing audio on Kie.ai</h5>
+                <h5 className="text-xs font-bold text-white">Synthesizing AI Studio Audio</h5>
                 <p className="text-[11px] text-zinc-400 font-mono leading-tight">{generationStage}</p>
                 {activeTaskId && (
                   <p className="text-[10px] text-zinc-500 font-mono">Task ID: {activeTaskId}</p>

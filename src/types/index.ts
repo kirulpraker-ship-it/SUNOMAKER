@@ -4,6 +4,7 @@ export interface User {
   email: string;
   role: 'ADMIN' | 'USER';
   status: 'ACTIVE' | 'SUSPENDED';
+  credits: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -83,6 +84,7 @@ export interface AdminUser {
   email: string;
   role: 'ADMIN' | 'USER';
   status: 'ACTIVE' | 'SUSPENDED';
+  credits: number;
   createdAt: string;
   updatedAt: string;
   kieConnection: {

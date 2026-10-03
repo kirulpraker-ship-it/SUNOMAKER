@@ -32,12 +32,14 @@ export const DashboardPage: React.FC<DashboardProps> = ({
   openConnectModal,
   onSelectTrack,
 }) => {
-  const { user, kieConnection } = useAuth();
+  const { user } = useAuth();
   const { currentTrack, isPlaying, playTrack, togglePlay, toggleFavorite } = useAudioPlayer();
 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [pendingGens, setPendingGens] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const userCredits = user?.credits ?? 20;
 
   useEffect(() => {
     loadDashboardData();
@@ -61,43 +63,19 @@ export const DashboardPage: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      {/* Prominent BYOK Alert if Disconnected */}
-      {!kieConnection.connected && (
-        <div className="p-6 rounded-2xl bg-gradient-to-r from-amber-950/40 via-purple-950/20 to-zinc-900 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
-          <div className="flex items-start space-x-3.5">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0">
-              <KeyRound className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-white">Connect Your Kie.ai API Key</h3>
-              <p className="text-xs text-zinc-300 max-w-xl mt-1 leading-relaxed">
-                SUNOMAKER uses your personal Kie.ai account for music generation. Connect your key to unlock full studio features, Suno V4 models, and stems.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={openConnectModal}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold text-xs shadow-lg transition flex items-center gap-2 shrink-0 cursor-pointer"
-          >
-            <KeyRound className="w-4 h-4" />
-            <span>Connect Kie.ai</span>
-          </button>
-        </div>
-      )}
-
       {/* Hero Studio Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-950/50 via-purple-950/30 to-zinc-950 border border-indigo-500/20 p-8 shadow-2xl">
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 max-w-2xl space-y-3">
           <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Suno V4 Powered • Bring Your Own Key</span>
+            <span>Suno V4 Powered • Studio AI Music</span>
           </div>
           <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
             Welcome back, {user?.name || 'Producer'}
           </h2>
           <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed">
-            Generate cinematic themes, synthwave anthems, emotional ballads, or custom lyrics with complete ownership directly through your Kie.ai account.
+            Create full-length studio tracks, cinematic themes, synthwave anthems, emotional ballads, or custom lyrics with high fidelity audio.
           </p>
 
           <div className="pt-2 flex flex-wrap gap-3">
@@ -116,11 +94,11 @@ export const DashboardPage: React.FC<DashboardProps> = ({
               <span>Lyrics Studio</span>
             </button>
             <button
-              onClick={() => setCurrentTab('kie-settings')}
+              onClick={() => setCurrentTab('library')}
               className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-semibold text-xs border border-zinc-700/60 transition flex items-center gap-2 cursor-pointer"
             >
-              <KeyRound className="w-4 h-4 text-indigo-400" />
-              <span>BYOK Settings</span>
+              <Music className="w-4 h-4 text-indigo-400" />
+              <span>My Library</span>
             </button>
           </div>
         </div>
@@ -128,23 +106,17 @@ export const DashboardPage: React.FC<DashboardProps> = ({
 
       {/* Studio Overview Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {/* Kie Connection Card */}
-        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
+        {/* Studio Credits Card */}
+        <div className="p-4 rounded-xl bg-zinc-900/60 border border-amber-500/20 space-y-1">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Kie.ai Link</span>
-            <KeyRound className="w-4 h-4 text-indigo-400" />
+            <span>Studio Credits</span>
+            <Sparkles className="w-4 h-4 text-amber-400" />
           </div>
-          <div className="text-lg font-bold text-white flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                kieConnection.connected ? 'bg-emerald-400' : 'bg-amber-400'
-              }`}
-            />
-            <span>{kieConnection.connected ? 'Connected' : 'Disconnected'}</span>
+          <div className="text-2xl font-extrabold text-amber-300 flex items-center gap-2">
+            <span>{userCredits}</span>
+            <span className="text-xs text-zinc-400 font-normal">Credits</span>
           </div>
-          <p className="text-[11px] font-mono text-zinc-400 truncate">
-            {kieConnection.maskedKey || 'No key connected'}
-          </p>
+          <p className="text-[11px] text-zinc-400">Available for generation</p>
         </div>
 
         {/* Tracks Created */}
@@ -174,7 +146,7 @@ export const DashboardPage: React.FC<DashboardProps> = ({
             <Clock className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="text-2xl font-bold text-white">{pendingGens.length}</div>
-          <p className="text-[11px] text-zinc-400">Processing on Kie.ai</p>
+          <p className="text-[11px] text-zinc-400">Processing in studio</p>
         </div>
       </div>
 

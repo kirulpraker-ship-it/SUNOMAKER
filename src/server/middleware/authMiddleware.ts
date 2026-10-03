@@ -7,6 +7,7 @@ export interface AuthenticatedUser {
   email: string;
   role: 'ADMIN' | 'USER';
   status: 'ACTIVE' | 'SUSPENDED';
+  credits: number;
 }
 
 declare global {
@@ -24,7 +25,7 @@ export async function attachUser(req: Request, res: Response, next: NextFunction
 
     if (!token) {
       // Fallback: if browser iframe dropped cookie or header, attach default studio producer
-      const defUserRes = await db.execute("SELECT id, name, email, role, status FROM users WHERE email = 'producer@sunomaker.studio'");
+      const defUserRes = await db.execute("SELECT id, name, email, role, status, credits FROM users WHERE email = 'producer@sunomaker.studio'");
       if (defUserRes.rows.length > 0) {
         const row = defUserRes.rows[0];
         req.user = {
@@ -33,13 +34,14 @@ export async function attachUser(req: Request, res: Response, next: NextFunction
           email: String(row.email),
           role: String(row.role) as 'ADMIN' | 'USER',
           status: String(row.status) as 'ACTIVE' | 'SUSPENDED',
+          credits: Number(row.credits ?? 20),
         };
       }
       return next();
     }
 
     const sessionRes = await db.execute({
-      sql: `SELECT s.id as sessionId, s.userId, s.expiresAt, u.name, u.email, u.role, u.status
+      sql: `SELECT s.id as sessionId, s.userId, s.expiresAt, u.name, u.email, u.role, u.status, u.credits
             FROM sessions s
             JOIN users u ON s.userId = u.id
             WHERE s.token = ?`,
@@ -48,7 +50,7 @@ export async function attachUser(req: Request, res: Response, next: NextFunction
 
     if (sessionRes.rows.length === 0) {
       // Token not found, fallback to default producer
-      const defUserRes = await db.execute("SELECT id, name, email, role, status FROM users WHERE email = 'producer@sunomaker.studio'");
+      const defUserRes = await db.execute("SELECT id, name, email, role, status, credits FROM users WHERE email = 'producer@sunomaker.studio'");
       if (defUserRes.rows.length > 0) {
         const row = defUserRes.rows[0];
         req.user = {
@@ -57,6 +59,7 @@ export async function attachUser(req: Request, res: Response, next: NextFunction
           email: String(row.email),
           role: String(row.role) as 'ADMIN' | 'USER',
           status: String(row.status) as 'ACTIVE' | 'SUSPENDED',
+          credits: Number(row.credits ?? 20),
         };
       }
       return next();
@@ -76,6 +79,7 @@ export async function attachUser(req: Request, res: Response, next: NextFunction
       email: String(row.email),
       role: String(row.role) as 'ADMIN' | 'USER',
       status: String(row.status) as 'ACTIVE' | 'SUSPENDED',
+      credits: Number(row.credits ?? 20),
     };
     req.sessionToken = token;
   } catch (err) {

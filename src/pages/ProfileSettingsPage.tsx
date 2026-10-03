@@ -98,39 +98,38 @@ export const ProfileSettingsPage: React.FC<{ setCurrentTab: (tab: string) => voi
         </form>
       </div>
 
-      {/* Kie.ai Integration Summary */}
+      {/* Studio Quota & Credits Summary */}
       <div className="p-6 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 shadow-xl flex items-center justify-between">
         <div>
           <h4 className="text-xs font-bold text-white flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-indigo-400" />
-            <span>Kie.ai Connection</span>
+            <Shield className="w-4 h-4 text-amber-400" />
+            <span>Studio Credit Balance</span>
           </h4>
           <p className="text-xs text-zinc-400 mt-1">
-            Status: {kieConnection.connected ? `Connected (${kieConnection.maskedKey})` : 'Not Connected'}
+            Current Quota: <strong className="text-amber-300 font-extrabold">{user?.credits ?? 20} Credits</strong> (Standard generation: 10 credits / song)
           </p>
         </div>
         <button
-          onClick={() => setCurrentTab('kie-settings')}
-          className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-medium transition"
+          onClick={() => setCurrentTab('create')}
+          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition cursor-pointer"
         >
-          Manage Connection
+          Create Music
         </button>
       </div>
 
-      {/* Account Deletion Area (Section 57) */}
+      {/* Account Deletion Area */}
       <div className="p-6 rounded-2xl bg-red-950/20 border border-red-900/40 shadow-xl space-y-3">
         <h4 className="text-xs font-bold text-red-300 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-red-400" />
-          <span>Delete SUNOMAKER Account</span>
+          <span>Delete Account</span>
         </h4>
         <p className="text-xs text-zinc-400 leading-relaxed">
-          Deleting your SUNOMAKER account will purge your profile, session tokens, encrypted Kie.ai credentials, and song metadata.
-          <strong className="text-zinc-300"> Note: Deleting your SUNOMAKER account does not delete or cancel your Kie.ai account.</strong>
+          Deleting your account will remove your profile, studio history, and saved creations.
         </p>
 
         <button
           onClick={() => setShowDeleteModal(true)}
-          className="px-4 py-2 rounded-xl bg-red-900/60 hover:bg-red-800 text-red-200 text-xs font-bold transition flex items-center gap-2"
+          className="px-4 py-2 rounded-xl bg-red-900/60 hover:bg-red-800 text-red-200 text-xs font-bold transition flex items-center gap-2 cursor-pointer"
         >
           <Trash2 className="w-4 h-4" />
           <span>Delete Account Permanently</span>

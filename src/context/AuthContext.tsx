@@ -10,6 +10,7 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   switchDemo: (role: 'ADMIN' | 'USER') => Promise<void>;
+  refreshUser: () => Promise<void>;
   refreshKieStatus: () => Promise<void>;
   connectKie: (apiKey: string) => Promise<{ maskedKey: string; message: string }>;
   testKie: () => Promise<{ success: boolean; message: string }>;
@@ -60,6 +61,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshUser = async () => {
+    try {
+      const data = await api.getMe();
+      if (data.user) {
+        setUser(data.user);
+        if (data.kieConnection) setKieConnection(data.kieConnection);
+      }
+    } catch {}
+  };
+
   const refreshKieStatus = async () => {
     try {
       const status = await api.getKieStatus();
@@ -107,6 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         role: 'USER',
         status: 'ACTIVE',
+        credits: 20,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -144,6 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: 'admin@sunomaker.studio',
           role: 'ADMIN',
           status: 'ACTIVE',
+          credits: 999,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         } : {
@@ -152,6 +165,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: 'producer@sunomaker.studio',
           role: 'USER',
           status: 'ACTIVE',
+          credits: 20,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -214,6 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         switchDemo,
+        refreshUser,
         refreshKieStatus,
         connectKie,
         testKie,

@@ -55,6 +55,7 @@ adminRouter.get('/users', async (req: Request, res: Response) => {
         u.email,
         u.role,
         u.status,
+        u.credits,
         u.createdAt,
         u.updatedAt,
         k.status as kieStatus,
@@ -75,6 +76,7 @@ adminRouter.get('/users', async (req: Request, res: Response) => {
       email: String(row.email),
       role: String(row.role),
       status: String(row.status),
+      credits: Number(row.credits ?? 20),
       createdAt: String(row.createdAt),
       updatedAt: String(row.updatedAt),
       kieConnection: {
@@ -89,6 +91,100 @@ adminRouter.get('/users', async (req: Request, res: Response) => {
     return res.json(formatted);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/credits
+ * Grant, set, or deduct user credits
+ */
+adminRouter.post('/users/:id/credits', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { amount, action = 'add', reason } = req.body;
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount)) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    const userRes = await db.execute({
+      sql: 'SELECT id, name, email, credits FROM users WHERE id = ?',
+      args: [id],
+    });
+
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const currentCredits = Number(userRes.rows[0]?.credits ?? 20);
+    let newCredits = currentCredits;
+
+    if (action === 'set') {
+      newCredits = Math.max(0, numAmount);
+    } else if (action === 'deduct') {
+      newCredits = Math.max(0, currentCredits - numAmount);
+    } else {
+      // Default: 'add'
+      newCredits = currentCredits + numAmount;
+    }
+
+    const now = new Date().toISOString();
+    await db.execute({
+      sql: 'UPDATE users SET credits = ?, updatedAt = ? WHERE id = ?',
+      args: [newCredits, now, id],
+    });
+
+    await AuditService.log(
+      req.user!.id,
+      'ADMIN_CREDITS_MODIFIED',
+      { targetUserId: id, action, amount: numAmount, previousCredits: currentCredits, newCredits, reason },
+      req.ip
+    );
+
+    return res.json({
+      success: true,
+      userId: id,
+      credits: newCredits,
+      message: `Credits updated to ${newCredits}`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to update user credits' });
+  }
+});
+
+/**
+ * POST /api/admin/distribute-credits
+ * Distribute credits to all active users
+ */
+adminRouter.post('/distribute-credits', async (req: Request, res: Response) => {
+  try {
+    const { amount, reason } = req.body;
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Please specify a positive credit amount' });
+    }
+
+    const now = new Date().toISOString();
+    await db.execute({
+      sql: "UPDATE users SET credits = credits + ?, updatedAt = ? WHERE status = 'ACTIVE'",
+      args: [numAmount, now],
+    });
+
+    await AuditService.log(
+      req.user!.id,
+      'ADMIN_CREDITS_BULK_DISTRIBUTED',
+      { amount: numAmount, reason },
+      req.ip
+    );
+
+    return res.json({
+      success: true,
+      amount: numAmount,
+      message: `Successfully distributed +${numAmount} credits to all active users!`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Bulk distribution failed' });
   }
 });
 
@@ -167,6 +263,44 @@ adminRouter.patch('/users/:id', async (req: Request, res: Response) => {
     return res.json({ success: true, message: 'User updated' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+/**
+ * DELETE /api/admin/users/:id
+ * Permanently delete a user account and associated records
+ */
+adminRouter.delete('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (id === req.user!.id) {
+      return res.status(400).json({ error: 'Anda tidak dapat menghapus akun admin yang sedang login.' });
+    }
+
+    const userRes = await db.execute({ sql: 'SELECT id, email, name FROM users WHERE id = ?', args: [id] });
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User tidak ditemukan' });
+    }
+    const targetUser = userRes.rows[0];
+
+    // Cascade delete user-related rows
+    await db.execute({ sql: 'DELETE FROM sessions WHERE userId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM user_kie_credentials WHERE userId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM tracks WHERE userId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM generations WHERE userId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM lyrics_drafts WHERE userId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [id] });
+
+    await AuditService.log(
+      req.user!.id,
+      'ADMIN_USER_DELETED',
+      { targetUserId: id, email: targetUser.email, name: targetUser.name },
+      req.ip
+    );
+
+    return res.json({ success: true, message: `User ${targetUser.name} berhasil dihapus permanen.` });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Gagal menghapus user' });
   }
 });
 

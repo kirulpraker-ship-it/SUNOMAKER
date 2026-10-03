@@ -262,6 +262,26 @@ export const api = {
     });
   },
 
+  async deleteAdminUser(userId: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson(`/api/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async updateUserCredits(userId: string, payload: { amount: number; action?: 'add' | 'set' | 'deduct'; reason?: string }): Promise<{ success: boolean; credits: number; message: string }> {
+    return fetchJson(`/api/admin/users/${userId}/credits`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async distributeCredits(payload: { amount: number; reason?: string }): Promise<{ success: boolean; message: string }> {
+    return fetchJson('/api/admin/distribute-credits', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getAdminGenerations(): Promise<Generation[]> {
     return fetchJson('/api/admin/generations');
   },

@@ -27,7 +27,26 @@ musicRouter.post('/generate', generateRateLimiter, async (req: Request, res: Res
       return res.status(401).json({ error: 'Authentication required. Please log in.' });
     }
 
-    // 1. Resolve active key: User's direct BYOK credential, or Admin Key Pool for Admin accounts
+    // 1. Check user's credit balance
+    const userRes = await db.execute({ sql: 'SELECT id, role, credits FROM users WHERE id = ?', args: [userId] });
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    const userRecord = userRes.rows[0];
+    const userRole = String(userRecord.role || 'USER');
+    const userCredits = Number(userRecord.credits ?? 20);
+
+    const GENERATION_COST = 10;
+    if (userCredits < GENERATION_COST && userRole !== 'ADMIN') {
+      return res.status(402).json({
+        error: 'INSUFFICIENT_CREDITS',
+        message: `Kredit studio Anda tidak mencukupi (Sisa: ${userCredits} kredit, Dibutuhkan: ${GENERATION_COST} kredit). Silakan hubungi Administrator untuk top up kredit.`,
+        currentCredits: userCredits,
+        requiredCredits: GENERATION_COST,
+      });
+    }
+
+    // 2. Resolve active key: User's direct BYOK credential, or Admin Key Pool
     let decryptedKey: string | null = null;
     let poolKeyId: string | null = null;
 
@@ -37,21 +56,17 @@ musicRouter.post('/generate', generateRateLimiter, async (req: Request, res: Res
     }
 
     if (!decryptedKey) {
-      const userRes = await db.execute({ sql: 'SELECT role FROM users WHERE id = ?', args: [userId] });
-      const userRole = userRes.rows[0]?.role || 'USER';
-      if (userRole === 'ADMIN') {
-        const poolKey = await AdminKeyPoolService.getNextActiveDecryptedKey();
-        if (poolKey) {
-          decryptedKey = poolKey.apiKey;
-          poolKeyId = poolKey.id;
-        }
+      const poolKey = await AdminKeyPoolService.getNextActiveDecryptedKey();
+      if (poolKey) {
+        decryptedKey = poolKey.apiKey;
+        poolKeyId = poolKey.id;
       }
     }
 
     if (!decryptedKey) {
       return res.status(400).json({
         error: 'KIE_API_NOT_CONNECTED',
-        message: 'Connect your Kie.ai API key (or configure Admin Key Pool) before generating music.',
+        message: 'Belum ada API Key aktif di Admin Key Pool. Silakan hubungi Administrator untuk menambahkan API Key Kie.ai.',
       });
     }
 
@@ -94,12 +109,20 @@ musicRouter.post('/generate', generateRateLimiter, async (req: Request, res: Res
       personaId,
     });
 
+    const generationId = 'gen_' + crypto.randomUUID().substring(0, 12);
+    const now = new Date().toISOString();
+
     if (poolKeyId) {
       await AdminKeyPoolService.recordUsage(poolKeyId).catch(() => {});
     }
 
-    const generationId = 'gen_' + crypto.randomUUID().substring(0, 12);
-    const now = new Date().toISOString();
+    // Deduct user credits (if not admin)
+    if (userRole !== 'ADMIN') {
+      await db.execute({
+        sql: 'UPDATE users SET credits = MAX(0, credits - ?), updatedAt = ? WHERE id = ?',
+        args: [GENERATION_COST, now, userId],
+      });
+    }
 
     // 4. Record generation (DO NOT store raw or decrypted key)
     await db.execute({
@@ -300,8 +323,13 @@ musicRouter.get('/status/:taskId', requireAuth, pollingRateLimiter, async (req: 
       });
     }
 
-    // 2. Poll Kie.ai status using user's decrypted key
-    const decryptedKey = await CredentialService.getDecryptedKey(userId);
+    // 2. Poll Kie.ai status using user's decrypted key or Admin Key Pool
+    let decryptedKey = await CredentialService.getDecryptedKey(userId);
+    if (!decryptedKey) {
+      const poolKey = await AdminKeyPoolService.getNextActiveDecryptedKey();
+      if (poolKey) decryptedKey = poolKey.apiKey;
+    }
+
     if (!decryptedKey) {
       return res.status(400).json({ error: 'Kie.ai credentials unavailable' });
     }
@@ -485,6 +513,18 @@ musicRouter.post('/extend', requireAuth, async (req: Request, res: Response) => 
     const userId = req.user!.id;
     const { trackId, prompt, style } = req.body;
 
+    const userRes = await db.execute({ sql: 'SELECT role, credits FROM users WHERE id = ?', args: [userId] });
+    const userRole = String(userRes.rows[0]?.role || 'USER');
+    const userCredits = Number(userRes.rows[0]?.credits ?? 20);
+
+    const EXTEND_COST = 5;
+    if (userCredits < EXTEND_COST && userRole !== 'ADMIN') {
+      return res.status(402).json({
+        error: 'INSUFFICIENT_CREDITS',
+        message: `Kredit Anda tidak mencukupi untuk extend musik (Butuh ${EXTEND_COST} kredit).`,
+      });
+    }
+
     const trackRes = await db.execute({
       sql: 'SELECT * FROM tracks WHERE id = ? AND userId = ?',
       args: [trackId, userId],
@@ -494,9 +534,18 @@ musicRouter.post('/extend', requireAuth, async (req: Request, res: Response) => 
       return res.status(404).json({ error: 'Track not found or unauthorized.' });
     }
 
-    const decryptedKey = await CredentialService.getDecryptedKey(userId);
+    let decryptedKey = await CredentialService.getDecryptedKey(userId);
+    let poolKeyId: string | null = null;
     if (!decryptedKey) {
-      return res.status(400).json({ error: 'Connect your Kie.ai API key before extending music.' });
+      const poolKey = await AdminKeyPoolService.getNextActiveDecryptedKey();
+      if (poolKey) {
+        decryptedKey = poolKey.apiKey;
+        poolKeyId = poolKey.id;
+      }
+    }
+
+    if (!decryptedKey) {
+      return res.status(400).json({ error: 'Tidak ada API Key aktif di pool. Silakan hubungi Admin.' });
     }
 
     const track = trackRes.rows[0];
@@ -509,6 +558,17 @@ musicRouter.post('/extend', requireAuth, async (req: Request, res: Response) => 
 
     const generationId = 'gen_' + crypto.randomUUID().substring(0, 12);
     const now = new Date().toISOString();
+
+    if (poolKeyId) {
+      await AdminKeyPoolService.recordUsage(poolKeyId).catch(() => {});
+    }
+
+    if (userRole !== 'ADMIN') {
+      await db.execute({
+        sql: 'UPDATE users SET credits = MAX(0, credits - ?), updatedAt = ? WHERE id = ?',
+        args: [EXTEND_COST, now, userId],
+      });
+    }
 
     await db.execute({
       sql: `INSERT INTO generations (id, userId, taskId, type, title, prompt, style, model, status, createdAt, updatedAt)
@@ -534,12 +594,24 @@ musicRouter.post('/cover', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Valid audio URL is required.' });
     }
 
-    const decryptedKey = await CredentialService.getDecryptedKey(userId);
+    let decryptedKey = await CredentialService.getDecryptedKey(userId);
+    let poolKeyId: string | null = null;
     if (!decryptedKey) {
-      return res.status(400).json({ error: 'Connect your Kie.ai API key first.' });
+      const poolKey = await AdminKeyPoolService.getNextActiveDecryptedKey();
+      if (poolKey) {
+        decryptedKey = poolKey.apiKey;
+        poolKeyId = poolKey.id;
+      }
+    }
+
+    if (!decryptedKey) {
+      return res.status(400).json({ error: 'Tidak ada API Key aktif di pool.' });
     }
 
     const result = await kieAiProvider.coverMusic(decryptedKey, { audioUrl, style });
+    if (poolKeyId) {
+      await AdminKeyPoolService.recordUsage(poolKeyId).catch(() => {});
+    }
     const generationId = 'gen_' + crypto.randomUUID().substring(0, 12);
     const now = new Date().toISOString();
 
